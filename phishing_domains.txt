@@ -1,0 +1,92 @@
+malicious.com
+phishy.site
+badlogin.net
+# === 3. Phishing Domain Detection ===
+PHISH_LIST="phishing_domains.txt"
+TARGET_LOG="/var/log/syslog"  # You can change this to any log you're scanning
+
+echo "[*] Checking for phishing domains in $TARGET_LOG..."
+
+while read DOMAIN; do
+  MATCHES=$(grep -i "$DOMAIN" "$TARGET_LOG")
+  if [ ! -z "$MATCHES" ]; then
+    ALERT_MSG="[!] PHISHING DOMAIN DETECTED: $DOMAIN found in logs"
+    echo "$ALERT_MSG"
+    echo "$(date) $ALERT_MSG" >> "$ALERT_LOG"
+  fi
+done < "$PHISH_LIST"
+#!/bin/bash
+
+# === CONFIGURATION ===
+AUTH_LOG="/var/log/auth.log"
+SYS_LOG="/var/log/syslog"
+PHISH_LIST="phishing_domains.txt"
+ALERT_LOG="alerts.log"
+FAILED_THRESHOLD=5
+TRAFFIC_THRESHOLD=1000
+
+# === BEGIN SCRIPT ===
+echo "=============================="
+echo "  SOC Threat Detection Toolkit"
+echo "  Started: $(date)"
+echo "=============================="
+
+echo "[*] Writing alerts to: $ALERT_LOG"
+echo "[*] ------------------------------------" >> "$ALERT_LOG"
+echo "[*] Detection run started at: $(date)" >> "$ALERT_LOG"
+
+##########################
+# 1. FAILED LOGIN CHECK
+##########################
+echo "[*] Checking failed logins..."
+FAILED_LOGINS=$(grep "Failed password" "$AUTH_LOG" | awk '{print $(NF-3)}' | sort | uniq -c | sort -nr)
+
+echo "$FAILED_LOGINS" | while read COUNT IP; do
+  if [[ "$COUNT" -ge "$FAILED_THRESHOLD" ]]; then
+    ALERT_MSG="[!] FAILED LOGIN ALERT: $COUNT attempts from $IP"
+    echo "$ALERT_MSG"
+    echo "$(date) $ALERT_MSG" >> "$ALERT_LOG"
+  fi
+done
+
+##########################
+# 2. TRAFFIC SPIKE CHECK
+##########################
+echo "[*] Checking for traffic spikes..."
+LINE_COUNT=$(wc -l < "$SYS_LOG")
+
+if [[ "$LINE_COUNT" -gt "$TRAFFIC_THRESHOLD" ]]; then
+  ALERT_MSG="[!] TRAFFIC SPIKE: $LINE_COUNT lines in $SYS_LOG"
+  echo "$ALERT_MSG"
+  echo "$(date) $ALERT_MSG" >> "$ALERT_LOG"
+else
+  echo "[-] Traffic normal: $LINE_COUNT lines."
+fi
+
+##########################
+# 3. PHISHING DOMAIN CHECK
+##########################
+echo "[*] Checking for phishing domains in $SYS_LOG..."
+
+if [[ ! -f "$PHISH_LIST" ]]; then
+  echo "[-] No phishing_domains.txt file found. Skipping phishing scan."
+else
+  while read DOMAIN; do
+    MATCHES=$(grep -i "$DOMAIN" "$SYS_LOG")
+    if [[ ! -z "$MATCHES" ]]; then
+      ALERT_MSG="[!] PHISHING DOMAIN DETECTED: $DOMAIN found in logs"
+      echo "$ALERT_MSG"
+      echo "$(date) $ALERT_MSG" >> "$ALERT_LOG"
+    fi
+  done < "$PHISH_LIST"
+fi
+
+##########################
+# 4. SUMMARY
+##########################
+echo "[*] Threat detection complete."
+echo "[*] Run completed at: $(date)"
+echo "[*] Review alerts in: $ALERT_LOG"
+echo "[*] ------------------------------------" >> "$ALERT_LOG"
+echo "" >> "$ALERT_LOG"
+
